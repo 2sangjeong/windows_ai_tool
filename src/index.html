@@ -80,6 +80,45 @@
   .titlebar-btn:hover { background: var(--surface2); color: var(--text); }
   .titlebar-btn.close:hover { background: var(--red); color: #fff; }
 
+  /* panel count toggle (타이틀바) */
+  .panel-count-toggle {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .panel-count-toggle .pc-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 0 6px 0 4px;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .count-btn {
+    min-width: 24px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Noto Sans KR', sans-serif;
+  }
+  .count-btn:hover { color: var(--text); }
+  .count-btn.active {
+    background: var(--accent);
+    color: #fff;
+  }
+
   /* ── MAIN LAYOUT ── */
   .main {
     display: flex;
@@ -441,6 +480,12 @@
 <div class="titlebar">
   <span class="titlebar-logo">AI Commander</span>
   <span class="titlebar-sub">업무 분류 + 멀티 AI 뷰어</span>
+  <div class="panel-count-toggle">
+    <span class="pc-label">패널</span>
+    <button class="count-btn" data-count="2" onclick="setPanelCount(2)">2</button>
+    <button class="count-btn active" data-count="3" onclick="setPanelCount(3)">3</button>
+    <button class="count-btn" data-count="4" onclick="setPanelCount(4)">4</button>
+  </div>
   <div class="titlebar-controls">
     <button class="titlebar-btn" onclick="window.electronAPI.minimize()">─</button>
     <button class="titlebar-btn" onclick="window.electronAPI.maximize()">□</button>
@@ -502,8 +547,10 @@ const AI_LIST = {
   gemini:     { name: 'Gemini',     url: 'https://gemini.google.com',   color: '#4285f4', icon: '✧' },
 };
 
-// 패널별 선택된 AI
-const paneSelections = ['claude', 'chatgpt', 'perplexity'];
+// 패널별 선택된 AI (패널 수에 따라 동적으로 늘어남/줄어듦)
+let paneSelections = ['claude', 'chatgpt', 'perplexity'];
+// 패널 수를 늘릴 때 새 패널에 우선 할당할 기본 AI 순서
+const PANE_SEED_ORDER = ['claude', 'chatgpt', 'perplexity', 'gemini'];
 let classifyMode = 'rule';
 
 // ── 분류 모드 ──────────────────────────────────────────
@@ -693,41 +740,77 @@ function highlightPane(idx) {
 }
 
 // ── 패널 생성 ──────────────────────────────────────────
+function createPane(idx) {
+  const aiKey = paneSelections[idx];
+  const ai = AI_LIST[aiKey];
+  const pane = document.createElement('div');
+  pane.className = 'ai-pane';
+  pane.id = `pane-${idx}`;
+
+  // 셀렉트 옵션
+  const opts = Object.entries(AI_LIST).map(([k, a]) =>
+    `<option value="${k}" ${k === aiKey ? 'selected' : ''}>${a.icon} ${a.name}</option>`
+  ).join('');
+
+  pane.innerHTML = `
+    <div class="ai-pane-header">
+      <div class="ai-dot" style="background:${ai.color}"></div>
+      <select class="ai-select" onchange="changeAI(${idx}, this.value)">${opts}</select>
+      <div class="pane-actions">
+        <button class="icon-btn" title="새로고침" onclick="reloadPane(${idx})">↺</button>
+        <button class="icon-btn" title="홈으로" onclick="homePane(${idx})">⌂</button>
+      </div>
+    </div>
+    <div class="ai-webview-wrap">
+      <webview id="webview-${idx}" src="${ai.url}"
+        partition="persist:ai${idx}"
+        useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+        allowpopups
+        style="width:100%;height:100%;border:none;">
+      </webview>
+    </div>`;
+  return pane;
+}
+
 function buildPanels() {
   const container = document.getElementById('aiPanels');
   container.innerHTML = '';
+  for (let idx = 0; idx < paneSelections.length; idx++) {
+    container.appendChild(createPane(idx));
+  }
+}
 
-  paneSelections.forEach((aiKey, idx) => {
-    const ai = AI_LIST[aiKey];
-    const pane = document.createElement('div');
-    pane.className = 'ai-pane';
-    pane.id = `pane-${idx}`;
+// ── 패널 수 변경 (2/3/4) ────────────────────────────────
+function setPanelCount(n) {
+  if (n === paneSelections.length) return;
 
-    // 셀렉트 옵션
-    const opts = Object.entries(AI_LIST).map(([k, a]) =>
-      `<option value="${k}" ${k === aiKey ? 'selected' : ''}>${a.icon} ${a.name}</option>`
-    ).join('');
+  if (n > paneSelections.length) {
+    // 늘리기: 현재 사용되지 않은 AI를 시드 순서대로 채움
+    const used = new Set(paneSelections);
+    const candidates = PANE_SEED_ORDER.filter(k => !used.has(k));
+    while (paneSelections.length < n) {
+      paneSelections.push(candidates.shift() || 'claude');
+    }
+  } else {
+    // 줄이기: 뒤쪽 패널부터 제거
+    paneSelections = paneSelections.slice(0, n);
+  }
 
-    pane.innerHTML = `
-      <div class="ai-pane-header">
-        <div class="ai-dot" style="background:${ai.color}"></div>
-        <select class="ai-select" onchange="changeAI(${idx}, this.value)">${opts}</select>
-        <div class="pane-actions">
-          <button class="icon-btn" title="새로고침" onclick="reloadPane(${idx})">↺</button>
-          <button class="icon-btn" title="홈으로" onclick="homePane(${idx})">⌂</button>
-        </div>
-      </div>
-      <div class="ai-webview-wrap">
-        <webview id="webview-${idx}" src="${ai.url}"
-          partition="persist:ai${idx}"
-          useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-          allowpopups
-          style="width:100%;height:100%;border:none;">
-        </webview>
-      </div>`;
+  // 증분 업데이트: 앞쪽 패널은 webview를 재생성하지 않음 (세션/로그인 유지, 리로드 방지)
+  const container = document.getElementById('aiPanels');
+  while (container.children.length > paneSelections.length) {
+    container.removeChild(container.lastChild);
+  }
+  for (let idx = container.children.length; idx < paneSelections.length; idx++) {
+    container.appendChild(createPane(idx));
+  }
 
-    container.appendChild(pane);
+  // 타이틀바 버튼 active 갱신
+  document.querySelectorAll('.count-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.count) === paneSelections.length);
   });
+
+  showToast(`AI 패널 ${paneSelections.length}개로 변경`);
 }
 
 function changeAI(idx, newKey) {
