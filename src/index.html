@@ -363,6 +363,11 @@
     gap: 1px;
     background: var(--border);
   }
+  .ai-panels.grid-2x2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
 
   .ai-pane {
     flex: 1;
@@ -804,6 +809,9 @@ function setPanelCount(n) {
   for (let idx = container.children.length; idx < paneSelections.length; idx++) {
     container.appendChild(createPane(idx));
   }
+
+  // 4분할: 2x2 그리드, 나머지: 가로 분할
+  container.classList.toggle('grid-2x2', paneSelections.length === 4);
 
   // 타이틀바 버튼 active 갱신
   document.querySelectorAll('.count-btn').forEach(btn => {
