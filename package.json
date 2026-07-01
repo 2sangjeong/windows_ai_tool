@@ -1,6 +1,6 @@
 {
   "name": "ai-commander",
-  "version": "1.0.0",
+  "version": "1.0.10",
   "description": "AI Commander - 업무 분류 + 멀티 AI 뷰어",
   "main": "src/main.js",
   "author": "shinhye",
